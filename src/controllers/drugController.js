@@ -1566,37 +1566,57 @@ const getDrugsByTherapeuticAreaWithData = async (req, res) => {
       });
     }
 
-    // Fetch associated data for each drug
-    const drugsWithData = await Promise.all(
-      drugs.map(async (overview) => {
-        const [
-          devStatus,
-          activity,
-          development,
-          otherSources,
-          licencesMarketing,
-          logs,
-        ] = await Promise.all([
-          devStatusRepo.findByDrugId(overview.id),
-          activityRepo.findByDrugId(overview.id),
-          developmentRepo.findByDrugId(overview.id),
-          otherSourcesRepo.findByDrugId(overview.id),
-          licencesMarketingRepo.findByDrugId(overview.id),
-          logsRepo.findByDrugId(overview.id),
-        ]);
+    // Get all drug IDs for batch fetching
+    const drugIds = drugs.map((d) => d.id);
 
-        return {
-          drug_over_id: overview.id,
-          overview,
-          devStatus: devStatus || [],
-          activity: activity || [],
-          development: development || [],
-          otherSources: otherSources || [],
-          licencesMarketing: licencesMarketing || [],
-          logs: logs || [],
-        };
-      })
-    );
+    // Optimized: Fetch all associated data for ONLY these drug IDs in parallel
+    const [
+      allDevStatus,
+      allActivity,
+      allDevelopment,
+      allOtherSources,
+      allLicencesMarketing,
+      allLogs,
+    ] = await Promise.all([
+      devStatusRepo.findByDrugIds(drugIds),
+      activityRepo.findByDrugIds(drugIds),
+      developmentRepo.findByDrugIds(drugIds),
+      otherSourcesRepo.findByDrugIds(drugIds),
+      licencesMarketingRepo.findByDrugIds(drugIds),
+      logsRepo.findByDrugIds(drugIds),
+    ]);
+
+    // Create lookup maps
+    const groupByDrugId = (items) => {
+      const map = new Map();
+      items.forEach((item) => {
+        const drugId = item.drug_over_id;
+        if (!map.has(drugId)) map.set(drugId, []);
+        map.get(drugId).push(item);
+      });
+      return map;
+    };
+
+    const devStatusMap = groupByDrugId(allDevStatus);
+    const activityMap = groupByDrugId(allActivity);
+    const developmentMap = groupByDrugId(allDevelopment);
+    const otherSourcesMap = groupByDrugId(allOtherSources);
+    const licencesMarketingMap = groupByDrugId(allLicencesMarketing);
+    const logsMap = groupByDrugId(allLogs);
+
+    // Transform into the expected structural format
+    const drugsWithData = drugs.map((overview) => {
+      return {
+        drug_over_id: overview.id,
+        overview,
+        devStatus: devStatusMap.get(overview.id) || [],
+        activity: activityMap.get(overview.id) || [],
+        development: developmentMap.get(overview.id) || [],
+        otherSources: otherSourcesMap.get(overview.id) || [],
+        licencesMarketing: licencesMarketingMap.get(overview.id) || [],
+        logs: logsMap.get(overview.id) || [],
+      };
+    });
 
     return res.status(StatusCodes.OK).json({
       message: `Drugs found for therapeutic area: ${therapeutic_area}`,
@@ -1635,37 +1655,57 @@ const getDrugsByApprovalStatusWithData = async (req, res) => {
       });
     }
 
-    // Fetch associated data for each drug
-    const drugsWithData = await Promise.all(
-      drugs.map(async (overview) => {
-        const [
-          devStatus,
-          activity,
-          development,
-          otherSources,
-          licencesMarketing,
-          logs,
-        ] = await Promise.all([
-          devStatusRepo.findByDrugId(overview.id),
-          activityRepo.findByDrugId(overview.id),
-          developmentRepo.findByDrugId(overview.id),
-          otherSourcesRepo.findByDrugId(overview.id),
-          licencesMarketingRepo.findByDrugId(overview.id),
-          logsRepo.findByDrugId(overview.id),
-        ]);
+    // Get all drug IDs for batch fetching
+    const drugIds = drugs.map((d) => d.id);
 
-        return {
-          drug_over_id: overview.id,
-          overview,
-          devStatus: devStatus || [],
-          activity: activity || [],
-          development: development || [],
-          otherSources: otherSources || [],
-          licencesMarketing: licencesMarketing || [],
-          logs: logs || [],
-        };
-      })
-    );
+    // Optimized: Fetch all associated data for ONLY these drug IDs in parallel
+    const [
+      allDevStatus,
+      allActivity,
+      allDevelopment,
+      allOtherSources,
+      allLicencesMarketing,
+      allLogs,
+    ] = await Promise.all([
+      devStatusRepo.findByDrugIds(drugIds),
+      activityRepo.findByDrugIds(drugIds),
+      developmentRepo.findByDrugIds(drugIds),
+      otherSourcesRepo.findByDrugIds(drugIds),
+      licencesMarketingRepo.findByDrugIds(drugIds),
+      logsRepo.findByDrugIds(drugIds),
+    ]);
+
+    // Create lookup maps
+    const groupByDrugId = (items) => {
+      const map = new Map();
+      items.forEach((item) => {
+        const drugId = item.drug_over_id;
+        if (!map.has(drugId)) map.set(drugId, []);
+        map.get(drugId).push(item);
+      });
+      return map;
+    };
+
+    const devStatusMap = groupByDrugId(allDevStatus);
+    const activityMap = groupByDrugId(allActivity);
+    const developmentMap = groupByDrugId(allDevelopment);
+    const otherSourcesMap = groupByDrugId(allOtherSources);
+    const licencesMarketingMap = groupByDrugId(allLicencesMarketing);
+    const logsMap = groupByDrugId(allLogs);
+
+    // Transform into the expected structural format
+    const drugsWithData = drugs.map((overview) => {
+      return {
+        drug_over_id: overview.id,
+        overview,
+        devStatus: devStatusMap.get(overview.id) || [],
+        activity: activityMap.get(overview.id) || [],
+        development: developmentMap.get(overview.id) || [],
+        otherSources: otherSourcesMap.get(overview.id) || [],
+        licencesMarketing: licencesMarketingMap.get(overview.id) || [],
+        logs: logsMap.get(overview.id) || [],
+      };
+    });
 
     return res.status(StatusCodes.OK).json({
       message: `Drugs found with approval status: ${isApproved}`,
