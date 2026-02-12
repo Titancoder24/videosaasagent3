@@ -1295,10 +1295,12 @@ const fetchAllDrugData = async (req, res) => {
   }
 };
 
-// NEW: Fetch all drugs with their associated data (similar to therapeutic controller)
+// NEW: Fetch all drugs with their associated data (OPTIMIZED version)
 const fetchAllDrugs = async (req, res) => {
   try {
-    // Get all overview records
+    const startTime = Date.now();
+
+    // 1. Get all overview records
     const allOverviews = await overviewRepo.findAll();
 
     if (!allOverviews || allOverviews.length === 0) {
@@ -1308,37 +1310,62 @@ const fetchAllDrugs = async (req, res) => {
       });
     }
 
-    // Fetch associated data for each drug using Promise.all for parallel execution
-    const drugsWithData = await Promise.all(
-      allOverviews.map(async (overview) => {
-        const [
-          devStatus,
-          activity,
-          development,
-          otherSources,
-          licencesMarketing,
-          logs,
-        ] = await Promise.all([
-          devStatusRepo.findByDrugId(overview.id),
-          activityRepo.findByDrugId(overview.id),
-          developmentRepo.findByDrugId(overview.id),
-          otherSourcesRepo.findByDrugId(overview.id),
-          licencesMarketingRepo.findByDrugId(overview.id),
-          logsRepo.findByDrugId(overview.id),
-        ]);
+    // 2. Fetch associated data for ALL drugs using bulk queries (parallel)
+    const [
+      allDevStatuses,
+      allActivities,
+      allDevelopments,
+      allOtherSources,
+      allLicencesMarketing,
+      allLogs,
+    ] = await Promise.all([
+      devStatusRepo.findAll(),
+      activityRepo.findAll(),
+      developmentRepo.findAll(),
+      otherSourcesRepo.findAll(),
+      licencesMarketingRepo.findAll(),
+      logsRepo.findAll(),
+    ]);
 
-        return {
-          drug_over_id: overview.id,
-          overview,
-          devStatus: devStatus || [],
-          activity: activity || [],
-          development: development || [],
-          otherSources: otherSources || [],
-          licencesMarketing: licencesMarketing || [],
-          logs: logs || [],
-        };
-      })
-    );
+    console.log(`[fetchAllDrugs] Bulk queries completed in ${Date.now() - startTime}ms`);
+
+    // 3. Create lookup maps for O(1) in-memory access
+    const mapByDrugId = (items) => {
+      const map = new Map();
+      for (const item of items) {
+        const drugId = item.drug_over_id;
+        if (!map.has(drugId)) {
+          map.set(drugId, []);
+        }
+        map.get(drugId).push(item);
+      }
+      return map;
+    };
+
+    const devStatusMap = mapByDrugId(allDevStatuses);
+    const activityMap = mapByDrugId(allActivities);
+    const developmentMap = mapByDrugId(allDevelopments);
+    const otherSourcesMap = mapByDrugId(allOtherSources);
+    const licencesMarketingMap = mapByDrugId(allLicencesMarketing);
+    const logsMap = mapByDrugId(allLogs);
+
+    // 4. Build response mapping data in memory
+    const drugsWithData = allOverviews.map((overview) => {
+      const drugId = overview.id;
+      return {
+        drug_over_id: drugId,
+        overview,
+        devStatus: devStatusMap.get(drugId) || [],
+        activity: activityMap.get(drugId) || [],
+        development: developmentMap.get(drugId) || [],
+        otherSources: otherSourcesMap.get(drugId) || [],
+        licencesMarketing: licencesMarketingMap.get(drugId) || [],
+        logs: logsMap.get(drugId) || [],
+      };
+    });
+
+    const totalTime = Date.now() - startTime;
+    console.log(`[fetchAllDrugs] Total processing time: ${totalTime}ms for ${drugsWithData.length} drugs`);
 
     return res.status(StatusCodes.OK).json({
       message: "All drugs data retrieved successfully",
@@ -1354,14 +1381,15 @@ const fetchAllDrugs = async (req, res) => {
   }
 };
 
-// NEW: Fetch drugs with pagination and all associated data
+// NEW: Fetch drugs with pagination and all associated data (OPTIMIZED version)
 const fetchDrugsPaginated = async (req, res) => {
   try {
+    const startTime = Date.now();
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const offset = (page - 1) * limit;
 
-    // Get total count and paginated overviews
+    // 1. Get total count and paginated overviews
     const [totalCount, allOverviews] = await Promise.all([
       overviewRepo.getTotalCount(),
       overviewRepo.findAllPaginated(offset, limit),
@@ -1381,37 +1409,62 @@ const fetchDrugsPaginated = async (req, res) => {
       });
     }
 
-    // Fetch associated data for each drug
-    const drugsWithData = await Promise.all(
-      allOverviews.map(async (overview) => {
-        const [
-          devStatus,
-          activity,
-          development,
-          otherSources,
-          licencesMarketing,
-          logs,
-        ] = await Promise.all([
-          devStatusRepo.findByDrugId(overview.id),
-          activityRepo.findByDrugId(overview.id),
-          developmentRepo.findByDrugId(overview.id),
-          otherSourcesRepo.findByDrugId(overview.id),
-          licencesMarketingRepo.findByDrugId(overview.id),
-          logsRepo.findByDrugId(overview.id),
-        ]);
+    // 2. Get the IDs of the drugs on this page
+    const drugIds = allOverviews.map(o => o.id);
 
-        return {
-          drug_over_id: overview.id,
-          overview,
-          devStatus: devStatus || [],
-          activity: activity || [],
-          development: development || [],
-          otherSources: otherSources || [],
-          licencesMarketing: licencesMarketing || [],
-          logs: logs || [],
-        };
-      })
-    );
+    // 3. Fetch associated data for ONLY these drugs using findByDrugIds
+    const [
+      allDevStatuses,
+      allActivities,
+      allDevelopments,
+      allOtherSources,
+      allLicencesMarketing,
+      allLogs,
+    ] = await Promise.all([
+      devStatusRepo.findByDrugIds(drugIds),
+      activityRepo.findByDrugIds(drugIds),
+      developmentRepo.findByDrugIds(drugIds),
+      otherSourcesRepo.findByDrugIds(drugIds),
+      licencesMarketingRepo.findByDrugIds(drugIds),
+      logsRepo.findByDrugIds(drugIds),
+    ]);
+
+    // 4. Create lookup maps
+    const mapByDrugId = (items) => {
+      const map = new Map();
+      for (const item of items) {
+        const drugId = item.drug_over_id;
+        if (!map.has(drugId)) {
+          map.set(drugId, []);
+        }
+        map.get(drugId).push(item);
+      }
+      return map;
+    };
+
+    const devStatusMap = mapByDrugId(allDevStatuses);
+    const activityMap = mapByDrugId(allActivities);
+    const developmentMap = mapByDrugId(allDevelopments);
+    const otherSourcesMap = mapByDrugId(allOtherSources);
+    const licencesMarketingMap = mapByDrugId(allLicencesMarketing);
+    const logsMap = mapByDrugId(allLogs);
+
+    // 5. Build response
+    const drugsWithData = allOverviews.map((overview) => {
+      const drugId = overview.id;
+      return {
+        drug_over_id: drugId,
+        overview,
+        devStatus: devStatusMap.get(drugId) || [],
+        activity: activityMap.get(drugId) || [],
+        development: developmentMap.get(drugId) || [],
+        otherSources: otherSourcesMap.get(drugId) || [],
+        licencesMarketing: licencesMarketingMap.get(drugId) || [],
+        logs: logsMap.get(drugId) || [],
+      };
+    });
+
+    console.log(`[fetchDrugsPaginated] Processed page ${page} in ${Date.now() - startTime}ms`);
 
     return res.status(StatusCodes.OK).json({
       message: "Drugs data retrieved successfully",

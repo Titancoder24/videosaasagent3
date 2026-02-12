@@ -44,6 +44,20 @@ class DrugLogsRepository {
     return result.rows;
   }
 
+  // NEW: Batch query for multiple drug IDs
+  async findByDrugIds(drugIds) {
+    if (!drugIds || drugIds.length === 0) return [];
+
+    const placeholders = drugIds.map((_, index) => `$${index + 1}`).join(",");
+    const query = `
+      SELECT * FROM "drug_logs" 
+      WHERE drug_over_id IN (${placeholders})
+      ORDER BY drug_over_id, id
+    `;
+    const result = await this.pool.query(query, drugIds);
+    return result.rows;
+  }
+
   async findById(id) {
     const query = 'SELECT * FROM "drug_logs" WHERE id = $1';
     const result = await this.pool.query(query, [id]);
